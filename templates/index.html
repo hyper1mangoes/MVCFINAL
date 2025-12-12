@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Flight Sim — Cockpit (Mountains)</title>
+<style>
+ html, body { height:100%; margin:0; background:#87CEEB; }
+ canvas { display:block; }
+ #hud {
+   position: absolute; left: 12px; top: 12px; z-index: 20; color: #000; pointer-events:none;
+   font-family: Inter, system-ui, sans-serif;
+ }
+ .stat { background: rgba(255,255,255,0.92); padding:6px 8px; border-radius:6px; margin-bottom:6px; font-weight:700; }
+ #gbar { margin-top:6px; width:180px; height:14px; background:#eee; border-radius:8px; overflow:hidden; }
+ #gfill { height:100%; width:0%; background:#e53935; transition: width 0.09s linear; }
+ #gAlarm {
+   display:none;
+   position:absolute;
+   top:80px;
+   left:12px;
+   padding:8px 12px;
+   background:red;
+   color:white;
+   font-weight:bold;
+   border-radius:6px;
+   z-index:30;
+   font-size:16px;
+   text-align:center;
+   opacity:1;
+ }
+ #controls { position:absolute; right:12px; top:12px; z-index:20; }
+ #resetBtn{ padding:8px 12px; border-radius:6px; border:0; background:#333; color:#fff; cursor:pointer; }
+ button.small { padding:6px 8px; border-radius:6px; border:0; background:#1976d2; color:#fff; cursor:pointer; margin-top:6px;}
+ #hint { position:absolute; bottom:12px; left:12px; color:#111; font-size:13px; background: rgba(255,255,255,0.92); padding:6px 8px; border-radius:6px; z-index:20; }
+ #credits { position:absolute; bottom:12px; right:12px; color:#111; font-size:12px; background: rgba(255,255,255,0.85); padding:6px 8px; border-radius:6px; z-index:20; }
+</style>
+</head>
+<body>
+ <div id="hud">
+   <div class="stat" id="gText">G: 0.00</div>
+   <div class="stat" id="spdText">Speed: 0</div>
+   <div class="stat" id="thrText">Throttle: 0.00</div>
+   <div id="gbar"><div id="gfill"></div></div>
+   <div id="gAlarm">⚠ HIGH G-FORCE ⚠</div>
+ </div>
+
+ <div id="controls">
+   <button id="resetBtn">RESET</button><br/>
+   <button id="centerBtn" class="small">Center Camera</button>
+   <div style="background:rgba(255,255,255,0.92); padding:8px; border-radius:8px; margin-top:8px; width:210px;">
+     Controls:<br/>
+     Arrow Up/Down: pitch<br/>
+     Arrow Left/Right: yaw<br/>
+     Q/E: roll • W/S: throttle
+   </div>
+ </div>
+
+ <div id="hint">Release controls to auto-level</div>
+ <div id="credits">Terrain: rolling hills + mountain ring</div>
+
+ <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+ <script>
+ // ---------- Scene ----------
+ const scene = new THREE.Scene();
+ scene.fog = new THREE.FogExp2(0x87CEEB, 0.00035);
+ scene.background = new THREE.Color(0x87CEEB);
+
+ const renderer = new THREE.WebGLRenderer({antialias:true});
+ renderer.setPixelRatio(window.devicePixelRatio || 1);
+ renderer.setSize(window.innerWidth, window.innerHeight);
+ document.body.appendChild(renderer.domElement);
+
+ const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
+
+ // ---------- Lighting ----------
+ const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+ sun.position.set(400, 800, 200);
+ scene.add(sun);
+ scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+
+ // ---------- Plane ----------
+ const planeGeom = new THREE.BoxGeometry(80, 14, 32);
+ const planeMat = new THREE.MeshStandardMaterial({color:0x6f80ff, roughness:0.6});
+ const plane = new THREE.Mesh(planeGeom, planeMat);
+ plane.castShadow = true;
+ scene.add(plane);
+
+
+ const frameGeom = new THREE.BoxGeometry(110,48,60);
+ const frameMat = new THREE.MeshBasicMaterial({color:0x000000, wireframe:true, transparent:true, opacity:0.06});
+ const frame = new THREE.Mesh(frameGeom, frameMat);
+ frame.position.set(10,8,0);
+ plane.add(frame);
+
+ // ---------- Terrain (near + far mountains) ----------
+ function createPlane(size, seg, color, offsetY, heightFunc) {
+   const geom = new THREE.PlaneGeometry(size, size, seg, seg);
+   geom.rotateX(-Math.PI/2);
+   const pos = geom.attributes.position;
+   for (let i=0;i<pos.count;i++){
+     const x=pos.getX(i), z=pos.getZ(i);
+     pos.setY(i, heightFunc(x,z));
+   }
+   geom.computeVertexNormals();
+   const mat = new THREE.MeshStandardMaterial({color:color});
+   const mesh = new THREE.Mesh(geom, mat);
+   mesh.position.y = offsetY;
+   scene.add(mesh);
+   return mesh;
+ }
+
+ createPlane(3500,128,0x2e7d32,-2,(x,z)=> 40*Math.sin(0.0009*x)*Math.cos(0.0011*z) + 6*Math.sin(0.004*x));
+ createPlane(14000,256,0x8B4513,-200,(x,z)=>{
+   const nx = x/14000-0.5, nz=z/14000-0.5, dist=Math.sqrt(nx*nx+nz*nz);
+   return Math.max(0,0.45-dist)*1200 + 180*Math.sin(0.0025*x)*Math.cos(0.0022*z);
+ });
+ createPlane(7000,64,0x2e7d32,-120,(x,z)=>200*Math.max(0,0.35-Math.hypot(x/7000,z/7000)) + 20*Math.sin(0.0015*x));
+
+ // ---------- Camera ----------
+ camera.position.set(-18,6,0);
+ plane.add(camera);
+ camera.lookAt(new THREE.Vector3(10,6,0));
+
+ // ---------- HUD refs ----------
+ const gText = document.getElementById('gText');
+ const spdText = document.getElementById('spdText');
+ const thrText = document.getElementById('thrText');
+ const gfill = document.getElementById('gfill');
+ const gAlarm = document.getElementById('gAlarm');
+
+ // ---------- Controls ----------
+ const keys = {};
+ window.addEventListener('keydown', (e)=> keys[e.key]=true);
+ window.addEventListener('keyup', (e)=> keys[e.key]=false);
+
+ let target = {pitch:0,yaw:0,roll:0,throttle:0.6};
+ let current = {pitch:0,yaw:0,roll:0,throttle:0.6};
+ const smoothing = 0.06;
+
+ function updateTargets(){
+   target.pitch = target.yaw = target.roll = 0;
+   if(keys['ArrowUp']) target.pitch=0.9;
+   if(keys['ArrowDown']) target.pitch=-0.9;
+   if(keys['ArrowLeft']) target.yaw=0.9;
+   if(keys['ArrowRight']) target.yaw=-0.9;
+   if(keys['q']||keys['Q']) target.roll=0.9;
+   if(keys['e']||keys['E']) target.roll=-0.9;
+   if(keys['w']||keys['W']) target.throttle=Math.min(1.0,target.throttle+0.004);
+   if(keys['s']||keys['S']) target.throttle=Math.max(0.0,target.throttle-0.004);
+ }
+
+ document.getElementById('resetBtn').addEventListener('click',()=>{
+   fetch('/reset',{method:'POST'}).then(()=>{
+     current.pitch=current.yaw=current.roll=0;
+     current.throttle=0.6; target.throttle=0.6;
+   });
+ });
+
+ document.getElementById('centerBtn').addEventListener('click',()=>{
+   camera.position.set(-18,6,0);
+   camera.lookAt(new THREE.Vector3(10,6,0));
+ });
+
+ // ---------- Networking ----------
+ async function sendInputsAndApply(){
+   current.pitch += (target.pitch-current.pitch)*smoothing;
+   current.yaw += (target.yaw-current.yaw)*smoothing;
+   current.roll += (target.roll-current.roll)*smoothing;
+   current.throttle += (target.throttle-current.throttle)*(smoothing*0.5);
+
+   const payload = {pitch:current.pitch,yaw:current.yaw,roll:current.roll,throttle:current.throttle};
+   try{
+     const res = await fetch('/update',{
+       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+     });
+     const s = await res.json();
+     plane.position.set(s.x,s.y,s.z);
+     plane.quaternion.set(s.qx,s.qy,s.qz,s.qw);
+
+     gText.textContent='G: '+s.g.toFixed(2);
+     spdText.textContent='Speed: '+s.speed.toFixed(1)+' m/s';
+     thrText.textContent='Throttle: '+s.throttle.toFixed(2);
+     const gperc=Math.min(Math.abs(s.g)/9*100,100);
+     gfill.style.width=gperc+'%';
+
+     // ---------- G-force alarm ----------
+     if(Math.abs(s.g)>=6){
+       gAlarm.style.display='block';
+     }else{
+       gAlarm.style.display='none';
+     
+     }
+   }catch(e){}
+ }
+
+ let lastNetwork=0;
+ const networkHz=30;
+
+ function animate(time){
+   requestAnimationFrame(animate);
+   updateTargets();
+   if(time-lastNetwork>(1000/networkHz)){
+     sendInputsAndApply();
+     lastNetwork=time;
+   }
+   renderer.render(scene,camera);
+ }
+ requestAnimationFrame(animate);
+
+ window.addEventListener('resize',()=>{
+   renderer.setSize(window.innerWidth,window.innerHeight);
+   camera.aspect=window.innerWidth/window.innerHeight;
+   camera.updateProjectionMatrix();
+ });
+ </script>
+</body>
+</html>
